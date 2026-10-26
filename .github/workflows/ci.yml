@@ -7,7 +7,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: ["3.8", "3.11", "3.12"]
+        python-version: ["3.9", "3.11", "3.12"]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -17,7 +17,6 @@ jobs:
         run: python -m py_compile core/*.py
       - name: offline test suite (35 tests)
         run: python -m unittest discover tests -v
-
   go-hub:
     runs-on: ubuntu-latest
     steps:
