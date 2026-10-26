@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+.DS_Store
+bin/
+native/aether_vm
+he_key.json
+nodes.json
+*.log

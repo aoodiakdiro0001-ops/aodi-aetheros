@@ -1,0 +1,38 @@
+name: ci
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Python test suite (offline)
+        run: python3 tests/test_aether.py -v
+      - name: Python syntax gate
+        run: python3 -m py_compile core/cli.py core/aether/*.py
+
+  go:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.21"
+      - name: gofmt + vet + build
+        working-directory: meshd
+        run: |
+          gofmt -l . | tee /tmp/fmt && test ! -s /tmp/fmt
+          go vet ./...
+          go build ./...
+
+  native:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: C++17 runner builds with -Wall -Werror
+        run: c++ -O2 -std=c++17 -Wall -Werror -o /tmp/aether_vm native/aether_vm.cpp
