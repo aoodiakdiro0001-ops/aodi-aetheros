@@ -1,8 +1,29 @@
+# __pycache__/ and other build noise
 __pycache__/
 *.pyc
-.DS_Store
+
+# build outputs
 bin/
-native/aether_vm
+mesh/ae-mesh
+*.o
+*.exe
+
+# local state (never commit operator state)
+*.db
+*.db-journal
+keys/
+cells/
+artifacts/
+
+# secrets of any shape (lesson learned project-wide)
+*.pem
+*.key
+*.env
+.env
 he_key.json
 nodes.json
-*.log
+native/
+
+# editor junk
+.DS_Store
+Thumbs.db

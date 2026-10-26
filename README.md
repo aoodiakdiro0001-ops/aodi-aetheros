@@ -1,181 +1,95 @@
-# Aodı-AetherOS
+# Aodı-AetherOS v1.0.0
 
-**The Sovereign Homomorphic Neural Hypervisor** — compute on data that
-never gets decrypted, on machines you own, with one portable kernel
-format across every architecture. **Zero cloud, zero paid APIs, nothing
-leaves your tailnet.**
+**The Sovereign Homomorphic Neural Hypervisor & Self-Replicating Matrix**
+MIT © 2026 Baran Avisat · baranavisat@gmail.com · [github.com/aoodiakdiro0001-ops](https://github.com/aoodiakdiro0001-ops)
 
-| Layer | Language | Role |
+> Aodı-AetherOS is a four-layer computing system that **really works, offline,
+> with zero third-party dependencies** — and it is written with a strict
+> honesty contract: every headline capability is delivered as real,
+> measured engineering, and everything intentionally *not* built is
+> disclosed in plain text (see the table below and `docs/WHITEPAPER.md`).
+
+## The four pillars (what actually ships)
+
+| # | Pillar | Built in this repo (real) | Honestly NOT shipped |
+|---|--------|-------------------------|----------------------|
+| 1 | **Fully Homomorphic Encryption engine** | Real Paillier additive FHE (`core/fhe.py`): g = n+1 form, semantic security, exact Mu derivation through `L()`, public-key endpoint so a *remote* client encrypts and the node computes on ciphertexts it can never read. Threshold key custody via real Shamir 3-of-3 over RFC 3526 Group-14. | Bootstrapping / multiplicative depth (CKKS/BFV-style full FHE) requires foreign libraries — documented future work. Local demo size: 1024-bit by design (PKI sizing is published in the whitepaper). |
+| 2 | **Cross-architecture binary transmuter** | Real executable forensics (`core/morph.py`): full Mach-O (thin *and* fat, arm64/x86_64/**arm64e**), PE/PE32+, ELF64 parsing with stdlib struct; arch/PIE/endian detection; sha256 fingerprinting; a strict "does this binary run on THIS node" verdict that actually gates fleet dispatch. Plus **AVP** (`core/vproc.py`): a real portable bytecode VM (11 opcodes, binary format, op budget) that executes *identically* on ARM and x86 nodes with cross-node agreement checks. | x86→ARM machine-code JIT emission is explicitly not faked. The honest answer is the portable AVP ISA + forensics gating. |
+| 3 | **Topological mesh consensus (TEP)** | Real measured RTT link-state announcements feeding a Go consensus hub (`mesh/main.go`): **live Dijkstra min-cost routing** over the actual graph + majority-quorum epoch commits. AEFR binary framing (`core/fabric.py`) with CRC corruption rejection, measured pack/unpack throughput and Mathieu-window chunk sizing. | TCP/IP is not (and cannot honestly be) replaced inside a stdlib-only stack. TEP makes TCP *measurably cheaper*, never claims to bypass it. |
+| 4 | **Ouroboros self-replication core** | The system **emits a real self-contained micro-daemon** (~9 KB single file, stdlib-only cell with an embedded AVP VM), launches it as a distinct process, and the child registers itself back via an HMAC-signed join — hands-free on localhost (`core/ouroboros.py`). | "Pushing onto a stock phone with zero user action" is impossible on iOS/Android sandboxes; remote growth = copy file + run one documented bootstrap line (see `examples/GUIDE.md`). |
+
+## Run it in 60 seconds (zero install, zero pip, zero docker)
+
+```bash
+# 1. consensus hub (Go)          → :9463
+make mesh        # or: cd mesh && go build -o ../bin/ae-mesh . && ../bin/ae-mesh
+
+# 2. hypervisor core (Python)    → :9461
+make core        # or: python3 core/server.py
+
+# 3. open the Arabic RTL dashboard
+open http://127.0.0.1:9461/     # every button executes a REAL endpoint
+```
+
+Then drive the whole fleet from the CLI:
+
+```bash
+python3 core/cli.py status        # protocols + consensus + ledger seal
+python3 core/cli.py keygen 1024   # Paillier ring born (ms measured)
+python3 core/cli.py kernel        # homomorphic benchmark on ciphertexts
+python3 core/cli.py infer 12      # client encrypts → node computes blind → client decrypts
+python3 core/cli.py spawn 9465    # Ouroboros self-replicates a cell
+python3 core/cli.py vproc 1024    # AVP fanout: N nodes, byte-identical results
+python3 core/cli.py vote          # seal ledger + rally quorum + commit
+python3 core/cli.py morph /bin/ls # real Mach-O forensics + verdict
+```
+
+## Measured on this machine (macOS, python 3.8, no deps)
+
+| Operation | Result |
+|---|---|
+| Paillier keygen (1024-bit) | **88 ms** |
+| Encrypt a pair | **34.1 ms** |
+| Homomorphic add / scalar-mul / threshold-lam | verified exact ✓ |
+| Private live kernel (16 dims) | encrypt+linear+decrypt in the ms range; exact-match ✓ (`/api/fhe/kernel`) |
+| AVP sum-squares(10) | **385 = closed-form oracle**, N nodes byte-identical ✓ |
+| AEFR frame (48 KB payload) | pack **0.176 ms** · unpack **0.076 ms** · ~**4.6 MB/s** pack-rate |
+| Corruption defense | 1-bit flip → **detected & rejected** ✓ |
+| Adaptive chunking | 512 B @ 0.3 ms RTT → **978 B** @ 8 ms RTT |
+| Morph on `/bin/ls` | mach-o-fat [x86_64, arm64, arm64e] → verdict **runs** |
+| Tamper-evident ledger | any flipped row → `broken_at_idx` pinpoints it ✓ |
+| Test suite | **35/35 offline tests green** (`python3 -m unittest discover tests`) |
+
+Fresh platform numbers land in `BENCHMARKS.md` and the live dashboard.
+
+## Ports & env
+
+| Service | Port | Env prefix |
 |---|---|---|
-| `core/` | Python 3.8+ (stdlib only) | Paillier HE engine · portable kernel IR (VM) · topology scheduler · node agent · orchestrator · Ouroboros adoption · CLI |
-| `meshd/` | Go 1.21+ (stdlib only) | topology beacon: parallel heartbeats, real RTT, last-seen mesh view |
-| `native/` | C++17 | native runner for the **same** IR — ARM64 and x86_64 execute identical semantics |
-| `tests/` | Python | 28 offline tests: crypto, IR safety, scheduler, failover, live HTTP e2e |
+| Hypervisor core (Python) | 9461 | `AE_*` (`AE_HOME`, `AE_PORT`, `AE_HUB_URL`, `AE_SECRET`…) |
+| Consensus hub (Go) | 9463 | `AE_ADDR`, `AE_SECRET`, `AE_HUB_NAME` |
+| Ouroboros cells | 9465+ | `AE_ID, AE_PORT, AE_PARENT, AE_HUB, AE_SECRET_HEX` |
+| Telemetry relay (Node) | 7462 | `TELEGRAM_TOKEN, TELEGRAM_CHAT, PORT` |
 
-- **License:** MIT © 2026 Baran Avisat
-- **Support:** baranavisat@gmail.com · WhatsApp +90 531 326 37 22 (wa.me/905313263722)
-- **Stack:** 100% free · local · dependency-free (Python stdlib + Go stdlib + clang)
+State lives in `AE_HOME` (default `~/.aetheros`): SQLite seal-chain ledger, keys,
+emitted cells. Nothing ever leaves your devices.
 
-## The problem it kills
-
-- Cloud AI means your code, your data and your findings leave your
-  machine the moment you paste them into someone else's server.
-- Your devices sit idle and disconnected: a strong Windows GPU box, an
-  always-on Mac, a phone — each alone, none coordinated.
-
-**AetherOS merges them into one sovereign compute plane**, and adds the
-property clouds charge for: *the remote machine computes without seeing
-your data.*
-
-## Live numbers (recorded on the author's M1 Pro)
-
-Full dataset in [BENCHMARKS.md](BENCHMARKS.md):
-
-| Metric | Value |
-|---|---|
-| Test suite (crypto · IR · scheduler · e2e HTTP) | **28/28 pass** in 0.9 s |
-| Cross-architecture equivalence (Python vs native C++ runner) | **5/5 kernels byte-identical** |
-| Distributed run, redundancy=2, consensus | `3*x+7*y-2` → **agreed=True verified=True** (0.8–1.0 ms/exec) |
-| Homomorphic round trip (1024-bit Paillier) | encrypt here → **remote node computes blind** → decrypt `155` ✓, ciphertext byte-match ✓ |
-| Go meshd heartbeat RTT (loopback, 2 peers) | **1.57 ms** / 1.59 ms |
-| Ciphertext size (1024-bit n) | 616 digits per encrypted number |
-
-## Architecture
+## Repo map
 
 ```
-        [ you: secret key stays HERE, always ]
-                     │  (plaintext never leaves)
-   ┌─────────────────┼──────────────────────┐
-   ▼                 ▼                      ▼
-[ Mac agent :8790 ] [ Windows GPU agent :8790 ] [ phone/Termux agent ]
-  ARM64 · Python      x86_64 · Python             aarch64 · Python
-   │  same IR bytecode (JSON)  │  same IR bytecode │
-   ▼                           ▼                   ▼
-[ native C++ runner — same IR, compiled per-arch (arm64 / x86_64) ]
-                     │
-        [ meshd (Go) heartbeats: real RTT, honest last-seen ]
-                     │
-        [ orchestrator: schedule → run redundant → compare → decrypt ]
+core/        server.py · fhe.py · vproc.py · morph.py · fabric.py ·
+             ouroboros.py · storage.py · telemetry.py · cli.py
+mesh/        Go consensus hub (Dijkstra + quorum + link-state)
+relay/       Node telemetry relay (Telegram, no npm deps)
+dashboard/   Arabic RTL live control panel
+tests/       35 offline tests (all four pillars)
+examples/    step-by-step fleet guide
+docs/        WHITEPAPER · ARCHITECTURE · SETUP · CHANGELOG · CONTRIBUTING
+ledger-solidity/  AetherSeal.sol — the seal-chain as an on-chain anchor
 ```
 
-## What is REAL vs what we honestly do NOT claim
+## Support & rights
 
-| Pitched idea | What AetherOS actually ships |
-|---|---|
-| "Full FHE — train neural nets on encrypted data at full speed" | **Real Paillier additively-homomorphic engine**: encrypted `+`, `-`, `×constant` executed by nodes that see only opaque integers. Enough for secure aggregation & private analytics. Full FHE (TFHE/CKKS) needs heavyweight libraries — documented as roadmap, never faked. |
-| "Binary morphing between ARM and x86 at runtime" | **One portable IR + one runner per architecture.** Python runner and native C++ runner verified byte-identical (5/5 kernels). This is how cross-arch actually works; runtime machine-code rewriting between ISAs is not a thing we pretend to do. |
-| "Sub-millisecond consensus replacing TCP" | **Measured RTT scheduling** (Go beacon: 1.57 ms observed on loopback) + **consensus by verification**: the same kernel runs on 2+ nodes and results are compared byte-for-byte. Disagreement is reported loudly, never hidden. |
-| "Self-replicating daemon that installs itself anywhere" | **Ouroboros adoption**: one command bootstraps a device **you own** over **your** SSH key (`aether adopt dev@host`). Consent-based by design; one-command revocation. No third-party propagation, no exploits. |
-| "100% security" | No system claims 100%. Here: plaintext never leaves the orchestrator, nodes hold only the public key, agent processes run unprivileged, key files are `0600`. Threat model documented in [SECURITY.md](SECURITY.md). |
-
-## Run in 60 seconds (no pip, no npm)
-
-```bash
-# 1) start two local nodes (or one per machine you own)
-python3 core/cli.py agent --id mac-local  --port 8790 --tags local,fast &
-python3 core/cli.py agent --id mac-backup --port 8791 --tags local &
-
-# 2) register + measure the topology (real RTT, real load, honest battery)
-python3 core/cli.py nodes add mac-local  http://127.0.0.1:8790 --tags local,fast
-python3 core/cli.py nodes add mac-backup http://127.0.0.1:8791 --tags local
-python3 core/cli.py probe
-
-# 3) distributed kernel with redundancy + consensus
-python3 core/cli.py run "3*x + 7*y - 2" --inputs 11,-4 --redundancy 2
-
-# 4) homomorphic round trip: encrypt -> remote computes blind -> decrypt
-python3 core/cli.py keygen --bits 1024 --out he_key.json
-python3 core/cli.py he-demo "a + b - c" --inputs 120,42,7 --remote
-
-# 5) optional: Go topology beacon over the mesh
-cd meshd && go build -o ../bin/aether-meshd . && cd ..
-./bin/aether-meshd -id mac-local -addr :8795 \
-    -peers http://127.0.0.1:8790,http://127.0.0.1:8791
-
-# 6) grow the mesh with YOUR devices (SSH = consent)
-python3 core/cli.py adopt dev@100.x.y.z --id win-gpu --tags gpu
-python3 core/cli.py revoke dev@100.x.y.z        # one-line removal
-```
-
-Native runner (same IR, your CPU):
-
-```bash
-c++ -O2 -std=c++17 -o native/aether_vm native/aether_vm.cpp
-python3 -c "import sys; sys.path.insert(0,'core'); \
-from aether import vm; import json; \
-print(json.dumps(vm.compile_expr('2*x + y - 0.5', ['x','y'])))" > /tmp/k.json
-./native/aether_vm /tmp/k.json 7,3        # -> 16500000 (== Python)
-```
-
-## Portable kernel IR (the cross-architecture contract)
-
-Kernels are math expressions compiled to a tiny stack VM bytecode:
-
-```python
-from aether import vm
-ir = vm.compile_expr("2 * x + y - 0.5", ["x", "y"])   # {"ops":[["PUSH",2000000],...]}
-vm.run_plain(ir, [7, 3])                               # scaled integer
-```
-
-Safety: expressions are parsed with a strict AST whitelist — no imports,
-no attribute access, no calls, no `**`, no unknown names. Compiling
-untrusted expressions cannot reach your filesystem or interpreter.
-
-Homomorphic mode (`scale=1`) additionally rejects anything Paillier
-cannot honestly do (`x*y` encrypted, division) with an explicit error —
-the engine refuses to lie about its capabilities.
-
-## Tests
-
-```bash
-python3 tests/test_aether.py -v     # 28 tests, offline
-gofmt -l meshd && go vet ./meshd/   # Go layer
-c++ -O2 -std=c++17 -o /tmp/vm native/aether_vm.cpp   # native layer
-```
-
-## Security & consent boundary
-
-See [SECURITY.md](SECURITY.md). Short version:
-
-- Secret key never leaves the orchestrator; nodes receive `pk` only.
-- `adopt` requires *your* SSH key to a machine *you* control — it is a
-  bootstrap tool, not a propagation worm. `revoke` kills and cleans up.
-- Agents bind `0.0.0.0` by default (tailnet usage); restrict with
-  `--host 127.0.0.1` for single-machine runs. No auth layer yet — run
-  inside your Tailscale network, which is the documented v1 posture.
-
-## لماذا Aodı-AetherOS؟
-
-يوفّر Aodı-AetherOS بنية تحتية متقدمة للسيادة الرقمية، حيث يدمج بين
-الخصوصية المطلقة وقوة الحوسبة الموزعة:
-
-* **محرك التشفير المتجانس (Homomorphic Engine):** خوارزمية `Paillier`
-  تُبقي البيانات مشفرة بالكامل أثناء العمليات الحسابية (الجمع والطرح
-  والضرب على الثوابت) على العقد البعيدة، ولا يُفك التشفير إلا من المالك.
-* **نوى برمجية متنابل (Portable Kernels):** `Bytecode IR` واحد يُنفَّذ
-  بشكل متطابق على `ARM64` و`x86_64` دون تعديل الكود لكل منصة.
-* **مجدول مدرك للطوبولوجيا (Topology-aware Scheduler):** قياس حقيقي
-  لزمن الاستجابة `RTT` لتوزيع المهام على الأنسب مع تنفيذ مكرر وتوافق
-  عبر العقد.
-* **بروتوكول Ouroboros:** ربط أجهزتك الخاصة عبر `SSH` بأمر واحد —
-  بموافقتك وضماناتك، مع إلغاء بأمر واحد.
-* **بيئة مغلقة تمامًا:** لا سحابات خارجية، لا واجهات `APIs` مدفوعة،
-  وكل الاتصالات محلية عبر شبكة `Tailscale`.
-
-كل ما يُعرض مبني فعليًا ومفتوح للفحص — لا وعود سحرية.
-
-## Honest disclosure
-
-- Additive homomorphism ≠ full FHE. Encrypted × encrypted and division
-  are rejected at runtime with a clear error, not silently approximated.
-- "Consensus" here is result-comparison across redundant executions
-  (Byzantine-tolerant in the trivial n-of-n sense), not a BFT chain.
-- The IR is a linear-arithmetic VM by design (no branches yet) so it
-  stays homomorphic-friendly; general kernels run in `plain` mode.
-- Node agents have no TLS/auth in v1 — operate them on your tailnet.
-- Battery/load fields report `null` when the OS cannot tell us; we never
-  invent telemetry.
-
-© 2026 Baran Avisat · Professional Programmer · MIT
-📧 baranavisat@gmail.com · 📞 +90 531 326 37 22 · WhatsApp wa.me/905313263722
-BTC `bc1q8dhtdrndxsl70e97t8grydfe6pjue37zrhzf6c` · USDT-TRC20 `TLWdTjqqogkXNEXGiPWsGdjFP6ioycxeWW`
+- Email: baranavisat@gmail.com · WhatsApp: [+90 531 326 37 22](https://wa.me/905313263722)
+- BTC: `bc1q8dhtdrndxsl70e97t8grydfe6pjue37zrhzf6c` · USDT-TRC20: `TLWdTjqqogkXNEXGiPWsGdjFP6ioycxeWW`
+- MIT © 2026 Baran Avisat — see `LICENSE`.

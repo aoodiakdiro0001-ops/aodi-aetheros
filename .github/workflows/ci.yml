@@ -1,38 +1,45 @@
-name: ci
-on:
-  push:
-  pull_request:
+name: AetherOS CI
+
+on: [push, pull_request, workflow_dispatch]
 
 jobs:
-  test:
+  python:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.8", "3.11", "3.12"]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
-      - name: Python test suite (offline)
-        run: python3 tests/test_aether.py -v
-      - name: Python syntax gate
-        run: python3 -m py_compile core/cli.py core/aether/*.py
+          python-version: ${{ matrix.python-version }}
+      - name: py_compile every core module
+        run: python -m py_compile core/*.py
+      - name: offline test suite (35 tests)
+        run: python -m unittest discover tests -v
 
-  go:
+  go-hub:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
           go-version: "1.21"
-      - name: gofmt + vet + build
-        working-directory: meshd
-        run: |
-          gofmt -l . | tee /tmp/fmt && test ! -s /tmp/fmt
-          go vet ./...
-          go build ./...
+      - name: gofmt check
+        run: test -z "$(gofmt -l .)" || (gofmt -l . && exit 1)
+      - name: vet
+        working-directory: mesh
+        run: go vet ./...
+      - name: build ae-mesh
+        working-directory: mesh
+        run: go build -o ../bin/ae-mesh .
 
-  native:
+  node-relay:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: C++17 runner builds with -Wall -Werror
-        run: c++ -O2 -std=c++17 -Wall -Werror -o /tmp/aether_vm native/aether_vm.cpp
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: syntax check relay (no npm deps)
+        run: node --check relay/relay.js

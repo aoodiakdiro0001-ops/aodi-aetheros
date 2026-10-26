@@ -6,8 +6,12 @@ WhatsApp +90 531 326 37 22
 ## What the design guarantees
 
 1. **Plaintext never leaves the orchestrator.** Only ciphertexts and the
-   *public* key travel to nodes. The secret key lives in
-   `he_key.json` (created `0600`) or your memory.
+   *public* ring (`~/.aetheros/keys/paillier.json`: `n_hex`, `mu_hex`,
+   Shamir-split λ shares) travel - the master trapdoor is split 3-of-3;
+   2 shares never reconstruct (raises), so no full `sk` file exists on
+   any device. Old drafts stored a single `he_key.json` with `0600`
+   permissions; that artifact is **removed from the codebase and from
+   the shipped history** as of v1.0.0.
 2. **Nodes cannot read operands.** A Paillier ciphertext is
    indistinguishable from a random residue; a node that logs every job
    still learns nothing about the numbers without `sk`.

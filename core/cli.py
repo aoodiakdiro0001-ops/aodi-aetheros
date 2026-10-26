@@ -1,261 +1,246 @@
-"""Aodı-AetherOS CLI — sovereign homomorphic mesh in one binary-free tool.
+#!/usr/bin/env python3
+"""Aodı-AetherOS — aectl operator CLI (stdlib only).
 
-    python3 -m aether.cli keygen --out he_key.json
-    python3 -m aether.cli agent --id mac-local --tags gpu,fast
-    python3 -m aether.cli nodes add win-gpu http://100.x.y.z:8790 --tags gpu
-    python3 -m aether.cli probe
-    python3 -m aether.cli run "2*x + y" --inputs 7,3 --redundancy 2
-    python3 -m aether.cli he-demo "a + b" --inputs 120,42 --remote
-    python3 -m aether.cli adopt dev@100.x.y.z --id win-gpu --tags gpu
-    python3 -m aether.cli revoke dev@100.x.y.z
-
-Designed & built by Baran Avisat (Professional Programmer).
+  aectl status                     protocols + consensus + cells + ledger
+  aectl keygen [bits]              paillier ring (threshold-split lam)
+  aectl kernel                     live additive-homomorphic bench
+  aectl infer 12                   privacy loop: client encrypt -> node
+                                   evaluates on ciphertext -> client decrypt
+  aectl collect                    encrypted fleet sum through the core
+  aectl vproc [n]                  AVP program local + fanout to cells
+  aectl morph PATH...              real Mach-O/PE/ELF forensics report
+  aectl spawn 9465 [9466...]       ouroboros self-replication onto cells
+  aectl cells                      live self-replicated registry
+  aectl fabric 48                  measured frame bench + live route
+  aectl vote                       seal + rally + quorum commit
+  aectl ledger                     seal chain
+  aectl serve [port]               hypervisor core
 """
-import argparse
+import base64
 import json
 import os
-import platform
 import sys
+import urllib.request
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-
-from aether import mesh, orchestrator, ouroboros, paillier as he, vm  # noqa
-
-CREDIT = ("Aodı-AetherOS v1.0 · © 2026 Baran Avisat (Professional Programmer)\n"
-          "📧 baranavisat@gmail.com · 📞 +90 531 326 37 22 · "
-          "WhatsApp wa.me/905313263722\n"
-          "BTC bc1q8dhtdrndxsl70e97t8grydfe6pjue37zrhzf6c · "
-          "USDT-TRC20 TLWdTjqqogkXNEXGiPWsGdjFP6ioycxeWW")
-
-DEFAULT_NODES = os.environ.get("AETHER_NODES_FILE", "nodes.json")
+CORE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, CORE)
+import config  # noqa: E402
 
 
-def _parse_inputs(s):
-    out = []
-    for part in str(s).split(","):
-        part = part.strip()
-        if not part:
-            continue
-        out.append(float(part) if "." in part else int(part))
-    return out
+def _req(method, path, payload=None, timeout=120):
+    url = "http://127.0.0.1:%d%s" % (config.DEFAULT_PORT, path)
+    data = json.dumps(payload).encode("utf-8") if payload is not None else None
+    req = urllib.request.Request(url, data=data, method=method,
+                                 headers={"Content-Type": "application/json"})
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        return json.loads(r.read().decode("utf-8"))
 
 
-def _load_nodes(path):
-    return mesh.load_nodes(path)
+def _client_key():
+    """Operator-side keyring (owner device) - documented demo seam."""
+    import fhe as fh
+    stored = config.load_json(config.KEY_DIR / "paillier.json")
+    if not stored:
+        print("[fail] no keyring - run: aectl keygen")
+        return None
+    key = _full_from(stored, fh)
+    return key
 
 
-def _print_topology(report):
-    print("  %-14s %-6s %9s %7s %8s %-10s %s"
-          % ("NODE", "STATE", "RTT ms", "SCORE", "LOAD", "BATT", "ARCH"))
-    for r in report["nodes"]:
-        print("  %-14s %-6s %9s %7s %8s %-10s %s"
-              % (r["id"], "UP" if r["up"] else "DOWN",
-                 ("%.1f" % r["rtt_ms"]) if r["rtt_ms"] is not None else "-",
-                 ("%.1f" % r["score"]) if r["score"] != float("inf") else "-",
-                 r["load_1m"] if r["load_1m"] is not None else "-",
-                 r["battery"] if r["battery"] is not None else "n/a",
-                 r["arch"] or "-"))
-    print("  => %d/%d nodes up" % (report["up"], report["total"]))
+def _full_from(stored, fh):
+    shares = stored["lam_shamir"]
+    mod = int(shares["modulus_hex"], 16)
+    pts = [(s["x"], int(s["y_hex"], 16)) for s in shares["shares"]]
+    lam = fh.shamir_combine(pts, mod)
+    return {"bits": stored["bits"], "n": int(stored["n_hex"], 16),
+            "mu": int(stored["mu_hex"], 16), "lam": lam}
 
 
-# --------------------------- commands ---------------------------------
-def cmd_keygen(a):
-    print("generating %d-bit Paillier keypair..." % a.bits)
-    pk, sk = he.generate_keypair(a.bits)
-    orchestrator.save_keypair(a.out, pk, sk, a.bits)
-    print("wrote %s (mode 600) — n is %d bits. KEEP IT PRIVATE; the "
-          "public key is what your nodes receive." % (a.out, pk.bits))
-    print(CREDIT)
+def cmd_status():
+    print(config.banner())
+    try:
+        st = _req("GET", "/api/state")
+        print("fhe:", st["fhe"]["scheme"], st["fhe"]["bits"], "bits")
+        print("consensus:", json.dumps(st.get("consensus"), ensure_ascii=False))
+        print("cells:", st.get("cells"), "| ledger:", st.get("ledger"))
+    except Exception as e:
+        print("[core down]", type(e).__name__, str(e)[:80])
+    vh_cells = None
+    try:
+        import storage
+        print("spawns table:", storage.list_cells())
+    except Exception:
+        pass
+    return vh_cells
 
 
-def cmd_nodes(a):
-    nodes = _load_nodes(a.nodes_file)
-    if a.action == "list":
-        if not nodes:
-            print("no nodes in %s — try: nodes add ..." % a.nodes_file)
-        for n in nodes:
-            print("  %-14s %-28s tags=%s"
-                  % (n["id"], n["base_url"], ",".join(n.get("tags") or []) or "-"))
-        return
-    if a.action == "add":
-        nodes = [n for n in nodes if n["id"] != a.id]
-        nodes.append({"id": a.id, "base_url": a.url,
-                      "tags": [t for t in (a.tags or "").split(",") if t]})
-        mesh.save_nodes(a.nodes_file, nodes)
-        print("added %s -> %s" % (a.id, a.url))
+def cmd_keygen(bits):
+    out = _req("POST", "/api/fhe/keygen", {"bits": int(bits or 0)})
+    print(json.dumps(out, ensure_ascii=False))
 
 
-def cmd_probe(a):
-    nodes = _load_nodes(a.nodes_file)
-    if not nodes:
-        print("no nodes in %s" % a.nodes_file)
-        return
-    probes = mesh.probe_all(nodes)
-    _print_topology(mesh.topology_report(nodes, probes))
+def cmd_kernel():
+    out = _req("POST", "/api/fhe/kernel")
+    print(json.dumps(out, ensure_ascii=False, indent=1))
 
 
-def cmd_run(a):
-    nodes = _load_nodes(a.nodes_file)
-    inputs = _parse_inputs(a.inputs)
-    names = ["x", "y", "z", "w", "v", "u"][:len(inputs)]
-    ir = vm.compile_expr(a.expr, names)
-    if not nodes:
-        # local fallback: still honest about where it ran
-        scaled = vm.run_plain(ir, inputs)
-        print("[local] %s = %s (no nodes in %s — ran on this machine)"
-              % (a.expr, vm.decode_result(scaled, ir), a.nodes_file))
-        return
-    probes = mesh.probe_all(nodes)
-    verdict = orchestrator.dispatch_plain(ir, inputs, nodes, probes,
-                                          redundancy=a.redundancy)
-    print("[kernel] %s   inputs=%s" % (a.expr, inputs))
-    for e in verdict["executions"]:
-        state = "ok" if e["ok"] else "FAIL: %s" % e.get("error")
-        print("  -> %-12s %-6s %sms" % (e["node"], state, e["ms"]))
-    print("result = %s   agreed=%s verified=%s"
-          % (verdict["decoded"], verdict["agreed"], verdict["verified"]))
-    if not verdict["agreed"]:
-        print("!! nodes DISAGREE — investigation required (never hidden)")
-        sys.exit(2)
+def cmd_infer(dims):
+    import fhe as fh
+    import random
+    key = _client_key()
+    if key is None:
+        return 1
+    n = key["n"]
+    rng = random.Random(42)
+    secret_vec = [rng.randrange(0, 900000) for _ in range(int(dims or 12))]
+    t0 = None
+    import time as _t
+    t0 = _t.perf_counter()
+    encs = [fh.encrypt(key, v) for v in secret_vec]
+    enc_ms = (_t.perf_counter() - t0) * 1000
+    out = _req("POST", "/api/private/dot", {"enc_values":
+               [fh.enc_hex(key, e) for e in encs]})
+    enc_score = fh.from_enc_hex(key, out["enc_score_hex"])
+    score = fh.decrypt(key, enc_score)
+    w_ints = fh.public_weights_fixed(
+        [(((i * 37) % 13) - 6) / 4.0 for i in range(len(secret_vec))],
+        key, config.FHE_SCALE)
+    ref = sum(w_ints[i] * secret_vec[i] for i in range(len(secret_vec))) % key["n"]
+    print("client-encrypted %d dims (%.1fms) -> node computed E(dot) in "
+          "%sms" % (len(secret_vec), enc_ms, out["linear_ms"]))
+    print("plaintext score recovered by client:", score, "| reference:", ref,
+          "| exact:", score == ref)
+    print("privacy: node saw only %d ciphertext hex strings" % len(secret_vec))
+    return 0
 
 
-def cmd_he_demo(a):
-    if a.key and os.path.exists(a.key):
-        pk, sk = orchestrator.load_keypair(a.key)
-        print("loaded key %s (%d-bit n)" % (a.key, pk.bits))
-    else:
-        pk, sk = he.generate_keypair(a.bits)
-        if a.key:
-            orchestrator.save_keypair(a.key, pk, sk, a.bits)
-        print("generated fresh %d-bit keypair" % a.bits)
-
-    inputs = _parse_inputs(a.inputs)
-    names = ["a", "b", "c", "d"][:len(inputs)]
-    ir = orchestrator.compile_he(a.expr, names)
-
-    print("\n[1] plaintext here        : inputs=%s" % inputs)
-    enc = orchestrator.he_encrypt_inputs(sk, inputs)
-    print("[2] encrypted here        : %d ciphertexts (%d digits each)"
-          % (len(enc), len(str(enc[0]))))
-
-    nodes = _load_nodes(a.nodes_file) if a.remote else []
-    demo = orchestrator.he_demo(sk, pk, ir, inputs,
-                                nodes=nodes or None)
-    print("[3] remote node(s) compute : %s"
-          % (", ".join(demo["remote_nodes_used"]) or
-             ("skipped (no nodes / --remote not set)")))
-    print("[4] decrypted back here    : %s" % demo["decrypted_result"])
-    if demo["remote_ciphertext_matches_local"] is not None:
-        print("[5] ciphertext byte-match  : %s"
-              % demo["remote_ciphertext_matches_local"])
-    if demo.get("remote_error"):
-        print("    remote error: %s" % demo["remote_error"])
-    print("\nhonest scope: additive homomorphism (encrypted +, - and "
-          "×constant). The node saw only opaque integers.")
-    print(CREDIT)
+def cmd_collect(count):
+    import fhe as fh
+    import random
+    import time as _t
+    key = _client_key()
+    if key is None:
+        return 1
+    rng = random.Random(77)
+    secrets_vals = [rng.randrange(1000, 900000) for _ in range(int(count or 3))]
+    t0 = _t.perf_counter()
+    encs = [fh.encrypt(key, v) for v in secrets_vals]
+    enc_ms = (_t.perf_counter() - t0) * 1000
+    out = _req("POST", "/api/private/collect",
+               {"enc_values": [fh.enc_hex(key, e) for e in encs]})
+    got = fh.decrypt(key, fh.from_enc_hex(key, out["enc_sum_hex"]))
+    ref = sum(secrets_vals) % key["n"]
+    print("fleet-sum: %d inputs, client enc %.1fms, node additive combine "
+          "%sms" % (len(secrets_vals), enc_ms, out["add_ms"]))
+    print("recovered sum %s | reference %s | exact %s"
+          % (got, ref, got == ref))
+    return 0
 
 
-def cmd_adopt(a):
-    tags = [t for t in (a.tags or "").split(",") if t]
-    out = ouroboros.adopt(a.target, a.id, a.port, tags,
-                          nodes_file=a.nodes_file,
-                          dry_run=a.dry_run)
-    print("adopted: %s" % json.dumps(out.get("node", out), indent=2))
+def cmd_vproc(n):
+    out = _req("POST", "/api/vproc/run", {"n": int(n or 1024)},
+               timeout=180)
+    print(json.dumps(out, ensure_ascii=False, indent=1))
+    return 0
 
 
-def cmd_revoke(a):
-    print(ouroboros.revoke(a.target, a.port))
+def cmd_morph(paths):
+    for p in paths:
+        try:
+            out = _req("POST", "/api/morph", {"path": p})
+            print(json.dumps(out, ensure_ascii=False)[:360])
+        except Exception as e:
+            print(p[:40], "->", type(e).__name__, str(e)[:80])
+    return 0
 
 
-def cmd_agent(a):
-    from aether import agent
-    tags = [t.strip() for t in (a.tags or "").split(",") if t.strip()]
-    agent.serve(a.id, a.port, tags, a.host)
+def cmd_spawn(ports):
+    for port in (ports or ["9465"]):
+        out = _req("POST", "/api/ouroboros/spawn", {"port": int(port)},
+                   timeout=120)
+        print(json.dumps({k: out.get(k) for k in
+                          ("spawned", "spawn_ms", "join_seconds",
+                           "registered_by")}, ensure_ascii=False),
+              "| id:", (out.get("cell") or {}).get("id"),
+              "| file bytes:", (out.get("cell") or {}).get("manifest", {})
+              .get("bytes"))
+    return 0
 
 
-def cmd_status(a):
-    from aether.agent import node_status
-    print(json.dumps(node_status(a.id or platform.node() or "local",
-                                 [t for t in (a.tags or "").split(",") if t]),
-                     indent=2))
+def cmd_fabric(kb):
+    out = _req("POST", "/api/fabric/net", {"payload_kb": int(kb or 48)})
+    print(json.dumps(out, ensure_ascii=False, indent=1))
+    return 0
 
 
-def build_parser():
-    p = argparse.ArgumentParser(
-        prog="aether",
-        description="Aodı-AetherOS — sovereign homomorphic mesh "
-                    "(zero-cloud, local-only)",
-        epilog=CREDIT, formatter_class=argparse.RawDescriptionHelpFormatter)
-    sub = p.add_subparsers(dest="cmd", required=True)
-
-    k = sub.add_parser("keygen", help="generate Paillier keypair")
-    k.add_argument("--bits", type=int, default=1024)
-    k.add_argument("--out", default="he_key.json")
-    k.set_defaults(fn=cmd_keygen)
-
-    n = sub.add_parser("nodes", help="manage node registry")
-    n.add_argument("action", choices=["add", "list"])
-    n.add_argument("id", nargs="?")
-    n.add_argument("url", nargs="?")
-    n.add_argument("--tags", default="")
-    n.add_argument("--nodes-file", default=DEFAULT_NODES)
-    n.set_defaults(fn=cmd_nodes)
-
-    pr = sub.add_parser("probe", help="measure mesh topology (real RTT)")
-    pr.add_argument("--nodes-file", default=DEFAULT_NODES)
-    pr.set_defaults(fn=cmd_probe)
-
-    r = sub.add_parser("run", help="run a cleartext kernel across nodes")
-    r.add_argument("expr")
-    r.add_argument("--inputs", required=True, help="comma separated")
-    r.add_argument("--redundancy", type=int, default=2)
-    r.add_argument("--nodes-file", default=DEFAULT_NODES)
-    r.set_defaults(fn=cmd_run)
-
-    h = sub.add_parser("he-demo", help="encrypted round trip demo")
-    h.add_argument("expr", help='e.g. "a + b" (HE: +, -, ×const only)')
-    h.add_argument("--inputs", required=True)
-    h.add_argument("--key", default="he_key.json")
-    h.add_argument("--bits", type=int, default=1024)
-    h.add_argument("--remote", action="store_true")
-    h.add_argument("--nodes-file", default=DEFAULT_NODES)
-    h.set_defaults(fn=cmd_he_demo)
-
-    ad = sub.add_parser("adopt", help="bootstrap YOUR device into the mesh")
-    ad.add_argument("target", help="user@host (SSH)")
-    ad.add_argument("--id", required=True)
-    ad.add_argument("--port", type=int, default=8790)
-    ad.add_argument("--tags", default="")
-    ad.add_argument("--nodes-file", default=DEFAULT_NODES)
-    ad.add_argument("--dry-run", action="store_true")
-    ad.set_defaults(fn=cmd_adopt)
-
-    rv = sub.add_parser("revoke", help="remove an adopted node")
-    rv.add_argument("target")
-    rv.add_argument("--port", type=int, default=8790)
-    rv.set_defaults(fn=cmd_revoke)
-
-    ag = sub.add_parser("agent", help="run the node agent here")
-    ag.add_argument("--id", default=platform.node() or "node")
-    ag.add_argument("--port", type=int, default=8790)
-    ag.add_argument("--tags", default="")
-    ag.add_argument("--host", default="0.0.0.0")
-    ag.set_defaults(fn=cmd_agent)
-
-    st = sub.add_parser("status", help="print this machine's node status")
-    st.add_argument("--id", default=platform.node() or "local")
-    st.add_argument("--tags", default="")
-    st.set_defaults(fn=cmd_status)
-    return p
+def cmd_vote():
+    out = _req("POST", "/api/vote/propose")
+    print(json.dumps(out, ensure_ascii=False, indent=1))
+    return 0
 
 
-def main(argv=None):
-    args = build_parser().parse_args(argv)
-    if args.cmd == "nodes" and args.action == "add" and not (
-            args.id and args.url):
-        build_parser().error("nodes add requires: nodes add ID URL")
-    args.fn(args)
+def cmd_ledger():
+    out = _req("GET", "/api/ledger")
+    print("verify:", out["verify"])
+    for r in out["rows"][:10]:
+        print("%3d %-20s %s" % (r["idx"], r["kind"], r["hash"][:16]))
+
+
+def main():
+    import argparse
+    ap = argparse.ArgumentParser(prog="aectl",
+                                 description="Aodı-AetherOS control plane")
+    sub = ap.add_subparsers(dest="cmd", required=True)
+    sub.add_parser("status")
+    kg = sub.add_parser("keygen"); kg.add_argument("bits", nargs="?",
+                                                   default=None)
+    sub.add_parser("kernel")
+    inf = sub.add_parser("infer"); inf.add_argument("dims", nargs="?",
+                                                    default="12")
+    cl = sub.add_parser("collect"); cl.add_argument("count", nargs="?",
+                                                    default="3")
+    vp = sub.add_parser("vproc"); vp.add_argument("n", nargs="?", default="1024")
+    mo = sub.add_parser("morph"); mo.add_argument("paths", nargs="+")
+    sp = sub.add_parser("spawn"); sp.add_argument("ports", nargs="*")
+    sub.add_parser("cells")
+    fb = sub.add_parser("fabric"); fb.add_argument("kb", nargs="?", default="48")
+    sub.add_parser("vote"); sub.add_parser("ledger")
+    sv = sub.add_parser("serve"); sv.add_argument("port", nargs="?",
+                                                  default=None)
+    a = ap.parse_args()
+    if a.cmd == "status":
+        return cmd_status()
+    if a.cmd == "keygen":
+        return cmd_keygen(a.bits)
+    if a.cmd == "kernel":
+        return cmd_kernel()
+    if a.cmd == "infer":
+        return cmd_infer(a.dims)
+    if a.cmd == "collect":
+        return cmd_collect(a.count)
+    if a.cmd == "vproc":
+        return cmd_vproc(a.n)
+    if a.cmd == "morph":
+        return cmd_morph(a.paths)
+    if a.cmd == "spawn":
+        return cmd_spawn(a.ports)
+    if a.cmd == "cells":
+        print(json.dumps(_req("GET", "/api/cells"), ensure_ascii=False,
+                         indent=1))
+        return 0
+    if a.cmd == "fabric":
+        return cmd_fabric(a.kb)
+    if a.cmd == "vote":
+        return cmd_vote()
+    if a.cmd == "ledger":
+        return cmd_ledger()
+    if a.cmd == "serve":
+        import server
+        if a.port:
+            config.DEFAULT_PORT = int(a.port)
+        server.main()
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main() or 0)

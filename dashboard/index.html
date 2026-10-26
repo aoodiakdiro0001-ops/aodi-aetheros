@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Aodı-AetherOS — لوحة المشرف المتجانس</title>
+<style>
+:root{--bg:#08090d;--card:#101319;--line:#212733;--txt:#e9ebef;--sub:#8d97a6;
+--ok:#22c55e;--warn:#f0b429;--bad:#ef4444;--acc:#f59e0b;--acc2:#38bdf8}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--txt);font-family:-apple-system,"Segoe UI",Tahoma,sans-serif}
+header{display:flex;justify-content:space-between;align-items:center;padding:15px 24px;background:var(--card);border-bottom:1px solid var(--line)}
+h1{font-size:18px}h1 span{color:var(--acc)}
+main{max-width:1120px;margin:0 auto;padding:20px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px;margin-bottom:16px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:13px}
+.card h3{font-size:12px;color:var(--sub);margin-bottom:7px;font-weight:600}
+.v{font-size:19px;font-weight:700}
+.sub_v{font-size:11px;color:var(--sub);margin-top:3px}
+.row{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0}
+button{background:var(--acc);color:#1f1200;border:0;padding:8px 14px;border-radius:9px;font-weight:700;cursor:pointer;font-size:12.5px}
+.btn2{background:#273043;color:var(--txt)}
+button:disabled{opacity:.5;cursor:wait}
+.kv{border:1px solid var(--line);border-radius:10px;padding:9px;margin:7px 0;background:var(--card);font-size:12.5px}
+.ok{color:var(--ok)}.bad{color:var(--bad)}.warn{color:var(--warn)}
+.pill{display:inline-block;font-size:10.5px;border-radius:99px;padding:2px 9px;border:1px solid var(--line);margin-left:4px}
+a{color:var(--acc2);text-decoration:none}
+footer{color:var(--sub);font-size:12px;text-align:center;padding:16px}
+pre{direction:ltr;text-align:left;font-size:11px;background:#0a0d13;border:1px solid var(--line);border-radius:8px;padding:8px;overflow:auto;max-height:170px}
+</style>
+</head>
+<body>
+<header>
+  <h1>Aodı-<span>AetherOS</span> — المشرف العصبي المتجانس</h1>
+  <div id="ver" style="color:var(--sub);font-size:12px"></div>
+</header>
+<main>
+  <div class="grid">
+    <div class="card"><h3>التشفير المتجانس (Paillier)</h3><div class="v" id="fhe">–</div><div class="sub_v" id="fhesub"></div></div>
+    <div class="card"><h3>طوبولوجيا الراوتر (Dijkstra)</h3><div class="v" id="route">–</div><div class="sub_v" id="routesub"></div></div>
+    <div class="card"><h3>إجماع الكوارث (شبه الأغلبية)</h3><div class="v" id="cons">–</div><div class="sub_v" id="conssub"></div></div>
+    <div class="card"><h3>خلايا أوبروبُروس</h3><div class="v" id="cells">–</div><div class="sub_v" id="cellssub"></div></div>
+    <div class="card"><h3>سلسلة الختم</h3><div class="v" id="ledger">–</div></div>
+  </div>
+
+  <div class="card">
+    <h3>مركز التحكم الحي — كل زر ينفذ عملاً حقيقياً</h3>
+    <div class="row">
+      <button onclick="doKeygen(1024)">مفاتيح 1024-بت</button>
+      <button class="btn2" onclick="doKernel()">معيار التشفير المتجانس</button>
+      <button class="btn2" onclick="doSpawn(9465)">خلية 1 (9465)</button>
+      <button class="btn2" onclick="doSpawn(9466)">خلية 2 (9466)</button>
+      <button class="btn2" onclick="doVproc()">تشغيل AVP موزع</button>
+      <button class="btn2" onclick="doVote()">أطلق إجماعاً</button>
+      <button class="btn2" onclick="doFabric()">قياس النسيج</button>
+      <button class="btn2" onclick="doMorph('/bin/ls')">تحليل /bin/ls</button>
+    </div>
+    <pre id="output">الأحداث ستظهر هنا…</pre>
+  </div>
+
+  <div class="card" style="margin-top:14px">
+    <h3>سجل الخلايا المنسوخة ذاتياً</h3>
+    <div id="cellList">—</div>
+  </div>
+
+  <div class="card" style="margin-top:14px">
+    <h3>سجل البرامج المتجهة (حساب عقد واحد، عدة عيارات)</h3>
+    <div id="progList">—</div>
+  </div>
+</main>
+<footer>Aodı-AetherOS v1.0.0 · MIT © 2026 Baran Avisat · <a href="mailto:baranavisat@gmail.com">baranavisat@gmail.com</a> · <a href="https://wa.me/905313263722">WhatsApp +90 531 326 37 22</a></footer>
+<script>
+const API = location.origin;
+const esc = (s) => { const d = document.createElement("div"); d.textContent = String(s || ""); return d.innerHTML; };
+async function j(u, b) {
+  return fetch(u, b ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(b) } : undefined).then(r => r.json());
+}
+function show(title, obj) {
+  const el = document.getElementById("output");
+  el.textContent = title + "\n" + JSON.stringify(obj, null, 1).slice(0, 1400);
+}
+async function refresh() {
+  try {
+    const st = await j(API + "/api/state");
+    document.getElementById("ver").textContent = st.brand + " · v" + st.version;
+    document.getElementById("fhe").textContent = st.fhe ? (st.fhe.bits + " بت") : "غير مفعل";
+    document.getElementById("fhesub").textContent = st.fhe ? st.fhe.scheme : "";
+    const cons = st.consensus || {};
+    document.getElementById("cons").textContent = cons.committed ? "مُثبت ✓" : (cons.reason || "بانتظار");
+    document.getElementById("conssub").textContent = cons.head ? ("الجهاز: " + cons.head.slice(0, 12) + " · أصوات: " + cons.votes) : "";
+    document.getElementById("cells").textContent = (st.cells || 0);
+    document.getElementById("ledger").textContent = (st.ledger && st.ledger.ok ? st.ledger.size + " ✓" : "تلاعب!");
+    const cells = (await j(API + "/api/cells")).cells || [];
+    const capTxt = (c) => [c.caps && c.caps.arch, c.caps && c.caps.python].filter(Boolean).join(" · ") || "ae-cell";
+    document.getElementById("cellssub").textContent = cells.length ? capTxt(cells[0]) : "";
+    document.getElementById("cellList").innerHTML = cells.map(c =>
+      `<div class="kv"><b>${esc(c.id)}</b> <span class="ok">● حيّة</span> <span class="pill">${esc(capTxt(c))}</span><div style="color:var(--sub);font-size:11px" dir="ltr">${esc(c.url)} · sha ${esc((c.manifest_sha || "").slice(0, 12))}</div></div>`).join("") || "لا خلايا بعد — أنشئ واحدة";
+    const progs = (await j(API + "/api/programs")).programs || [];
+    document.getElementById("progList").innerHTML = progs.slice(0, 6).map(p =>
+      `<div class="kv"><b>${esc(p.name)}</b> — ${p.nodes} عقدة/${p.agreement ? '<span class="ok">مطابقة تامة ✓</span>' : '<span class="bad">اختلاف!</span>'} <span class="pill">${esc((p.prog_sha256 || "").slice(0, 8))}</span></div>`).join("") || "لا برامج";
+  } catch (e) { /* keep last state */ }
+}
+async function doKeygen(bits) {
+  show("مفاتيح قيد الإنتاج…", { bits }); refresh();
+  show("مفاتيح قائمة", await j(API + "/api/fhe/keygen", { bits })); refresh();
+}
+async function doKernel() {
+  show("معيار التشفير المتجانس قيد التشغيل…", {});
+  show("معيار التشفير المتجانس", await j(API + "/api/fhe/kernel", {})); refresh();
+}
+async function doSpawn(port) {
+  show("أوبروبُروس ينسخ ذاته في عملية جديدة…", { port });
+  show("خلية منسوخة", await j(API + "/api/ouroboros/spawn", { port })); refresh();
+}
+async function doVproc() {
+  show("AVP يوزع البرنامج على الخلايا…", {});
+  show("نتائج AVP", await j(API + "/api/vproc/run", { n: 1024 })); refresh();
+}
+async function doVote() {
+  show("اقتراح epoch + تجميع الأصوات…", {});
+  show("الإجماع", await j(API + "/api/vote/propose", {})); refresh();
+}
+async function doFabric() {
+  show("قياس حزم الشبكة الحقيقية…", {});
+  show("قياس النسيج", await j(API + "/api/fabric/net", { payload_kb: 48, iterations: 240 })); refresh();
+}
+async function doMorph(path) {
+  show("تحليل ثنائي حقيقي…", { path });
+  show("التشكيل الهيكلي", await j(API + "/api/morph", { path })); refresh();
+}
+refresh(); setInterval(refresh, 4000);
+</script>
+</body>
+</html>
